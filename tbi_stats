@@ -1,0 +1,225 @@
+## Created by Mickey Rice
+## April 5th, 2025
+
+# Load packages ###############################################################
+library(psych)
+library(tidyverse)
+library(readxl)
+library(tidyr)
+library(officer)
+library(flextable)
+library(effsize)
+library(stringr)
+
+# Read in data file ###############################################################
+data <- read_excel("tbi.xlsx")
+
+# Describe data
+describe(data)
+
+table(data$TBI1)
+str(data$Accuracy)
+
+# Test TBI vs No TBI ############################################################
+t.test(Accuracy ~ TBI1, data = data)
+t.test(PP ~ TBI1, data = data)
+t.test(N300 ~ TBI1, data = data)
+# Effect sizes - Cohen's d
+cohen.d(Accuracy ~ TBI1, data = data)
+cohen.d(PP ~ TBI1, data = data)
+cohen.d(N300 ~ TBI1, data = data)
+
+# Test symptom severity #########################################################
+# Filter so it's only the TBI yes participants
+tbi_yes_data <- data %>%
+  filter(TBI1 == "Yes")
+
+# Count up the number of symptoms to get symptom severity 
+tbi_yes_data <- tbi_yes_data %>%
+  mutate(
+    SymptomCount = case_when(
+      TBI2 == "None" ~ 0,
+      TRUE ~ str_count(TBI2, ",") + 1
+    )
+  )
+
+# Test is symptom severity predicts outcomes
+model1 <- lm(scale(Accuracy) ~ scale(SymptomCount), data = tbi_yes_data)
+summary(model1)
+summary(model1)$r.squared
+
+model2 <- lm(scale(PP) ~ scale(SymptomCount), data = tbi_yes_data)
+summary(model2)
+summary(model2)$r.squared
+
+model3 <- lm(scale(N300) ~ scale(SymptomCount), data = tbi_yes_data)
+summary(model3)
+summary(model3)$r.squared
+
+# Test loss of consciousness ######################################################
+# Compare loss of consciousness 
+table(tbi_yes_data$TBI4)
+t.test(Accuracy ~ TBI4, data = tbi_yes_data)
+t.test(PP ~ TBI4, data = tbi_yes_data)
+t.test(N300 ~ TBI4, data = tbi_yes_data)
+
+# Filter so it's only the unconscious yes participants
+uncons_yes_data <- data %>%
+  filter(TBI4 == "Yes")
+
+# Test is length of unconciousness predicts outcomes
+model4 <- lm(scale(Accuracy) ~ scale(TBI5), data = uncons_yes_data)
+summary(model4)
+summary(model4)$r.squared
+
+model5 <- lm(scale(PP) ~ scale(TBI5), data = uncons_yes_data)
+summary(model5)
+summary(model5)$r.squared
+
+model6 <- lm(scale(N300) ~ scale(TBI5), data = uncons_yes_data)
+summary(model6)
+summary(model6)$r.squared
+
+tbi_yes_data$ID
+
+# Filter so it's only the TBI no participants
+tbi_no_data <- data %>%
+  filter(TBI1 == "No")
+
+tbi_no_data$ID
+
+### Demogrpahics #################################################
+data <- data %>%
+  mutate(GenderSimplified = case_when(
+    str_detect(tolower(Gender), "female|woman") ~ "Woman",
+    str_detect(tolower(Gender), "male|man") ~ "Man",
+    str_detect(tolower(Gender), "Gender Queer|Gender fluid|Gender queer|GenderQueer|Genderfluid|
+               Transgender Female|Transgender Male|TransgenderFemale/TransWoman/MTF|
+               TransgenderMale/TransMan/FTM|TransgenderNonbinary") ~ "Nonbinary/Transgender",
+    TRUE ~ "Other/Unspecified"
+  ))
+
+# Collapse less common Race categories
+top_races <- data %>%
+  count(Race) %>%
+  arrange(desc(n)) %>%
+  filter(n / sum(n) > 0.05) %>%
+  pull(Race)
+
+data <- data %>%
+  mutate(RaceSimplified = if_else(Race %in% top_races, Race, "Other"))
+
+# Gender summary
+gender_table <- data %>%
+  count(GenderSimplified) %>%
+  mutate(Percent = round(n / sum(n) * 100, 1))
+
+# Race summary
+race_table <- data %>%
+  count(RaceSimplified) %>%
+  mutate(Percent = round(n / sum(n) * 100, 1))
+
+ethnicity_table <- data %>%
+  count(Ethnicity) %>%
+  mutate(Percent = round(n / sum(n) * 100, 1)) %>%
+  rename(n = n)
+
+age_stats <- data %>%
+  summarise(Mean_Age = round(mean(Age, na.rm = TRUE), 1),
+            SD_Age = round(sd(Age, na.rm = TRUE), 1))
+
+#Create Flextables 
+gender_ft <- flextable(gender_table)
+race_ft <- flextable(race_table)
+ethnicity_ft <- flextable(ethnicity_table)
+age_ft <- flextable(age_stats)
+
+# Export to Word 
+doc <- read_docx()
+
+doc <- doc %>%
+  body_add_par("Participant Demographics", style = "heading 1") %>%
+  body_add_par("Gender", style = "heading 2") %>%
+  body_add_flextable(gender_ft) %>%
+  body_add_par("Race", style = "heading 2") %>%
+  body_add_flextable(race_ft) %>%
+  body_add_par("Ethnicity", style = "heading 2") %>%
+  body_add_flextable(ethnicity_ft) %>%
+  body_add_par("Age (M, SD)", style = "heading 2") %>%
+  body_add_flextable(age_ft)
+
+print(doc, target = "Demographics_Table.docx")
+
+# View full race breakdown with counts and percentages
+detailed_race_table <- data %>%
+  filter(!is.na(Race)) %>%
+  count(Race, sort = TRUE) %>%
+  mutate(Percent = round(n / sum(n) * 100, 1))
+
+print(detailed_race_table)
+
+# Make tables!! ###############################################################
+
+# Count TBI symptoms
+## Split the TBI2 column into a list of individual symptoms
+data_long <- data %>%
+  mutate(TBI2 = strsplit(as.character(TBI2), ",")) %>%
+  unnest(TBI2)
+
+data_long <- data_long %>%
+  mutate(TBI2 = trimws(TBI2))
+
+symptom_count <- data_long %>%
+  group_by(TBI2) %>%
+  summarise(Count = n(), .groups = 'drop') %>%
+  arrange(desc(Count))
+
+print(symptom_count)
+
+kable(symptom_count, caption = "Symptom Frequency Count")
+
+## Create a new Word document
+doc <- read_docx()
+
+## Add a title 
+doc <- doc %>%
+  body_add_par("Symptom Frequency Report", style = "heading 1")
+
+## Add the symptom count table
+doc <- doc %>%
+  body_add_flextable(flextable(symptom_count))
+
+## Save the Word document
+print(doc, target = "Symptom_Frequency_Report.docx")
+
+# TBI info tables
+tbi_status_table <- data %>%
+  group_by(TBI1) %>%
+  summarise(Count = n(),
+            Percent = n() / nrow(data) * 100, .groups = 'drop')
+
+tbi_info_table <- tbi_yes_data %>%
+  group_by(TBI1) %>%
+  summarise(Count = n(),
+            MeanSymptoms = mean(SymptomCount, na.rm = TRUE),
+            SDSymptoms = sd(SymptomCount, na.rm = TRUE), .groups = 'drop')
+
+## Create a new Word document
+doc <- read_docx()
+
+## Add a title 
+doc <- doc %>%
+  body_add_par("TBI Status and Symptom Information", style = "heading 1")
+
+## Add the first table (TBI Status Table)
+doc <- doc %>%
+  body_add_par("TBI Status Table (Count and Percent)", style = "heading 2") %>%
+  body_add_flextable(flextable(tbi_status_table))
+
+## Add the second table (TBI Info Table)
+doc <- doc %>%
+  body_add_par("TBI Symptom Information (Mean and SD of Symptoms)", style = "heading 2") %>%
+  body_add_flextable(flextable(tbi_info_table))
+
+## Save the Word document
+print(doc, target = "tbi_info_tables.docx")
