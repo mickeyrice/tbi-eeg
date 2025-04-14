@@ -1,0 +1,98 @@
+## Created by Mickey Rice
+## Jan 29th, 2025
+
+# Using SQL to combine datasets and extract specific values---------------------
+
+install.packages("readxl")  # For reading Excel files
+install.packages("sqldf")   # For running SQL queries
+install.packages("openxlsx") # For writing xcel files
+
+library(readxl)
+library(sqldf)
+library(openxlsx)
+
+#For PMA
+
+# Load the participant and screener files (replace with your actual file paths)
+participants <- read_excel("/Users/mickey.rice/Desktop/Important/PMA docs/Project with Josh/ParticipantInfo.xlsx")
+data <- read_excel("/Users/mickey.rice/Desktop/Important/PMA docs/Project with Josh/DEX_FA_Data.xlsx")
+screener <- read_excel("/Users/mickey.rice/Desktop/Important/PMA docs/Project with Josh/Data_NoNames.xlsx")
+
+# SQL query to join the tables based on the ID_Number and add Idnumber to the data
+query <- "
+SELECT d.*, s.Q1_37, s.Q1_38, s.Q1_39, s.Q1_40, s.Q1_41, s.Q1_42
+FROM data d
+JOIN participants p ON d.ID_Number = p.ID_Number
+JOIN screener s ON p.Idnumber = s.Idnumber;
+"
+
+# Run the SQL query to combine the data and add the 'Idnumber' to 'data'
+combined_data1 <- sqldf(query)
+
+library(dplyr)
+
+combined_data1 <- combined_data1 %>%
+  rename(
+    TBI1 = Q1_37,
+    TBI2 = Q1_38,
+    TBI3 = Q1_39,
+    TBI4 = Q1_40,
+    TBI5 = Q1_41,
+    TBI6 = Q1_42
+  )
+
+# View updated data
+head(combined_data1)
+
+install.packages("writexl")
+library(writexl)
+write_xlsx(combined_data1, "/Users/mickey.rice/Desktop/combinedTBI1.xlsx")
+
+
+#For PMD
+
+# Load the participant and screener files (replace with your actual file paths)
+participantsPMD <- read_excel("/Users/mickey.rice/Desktop/ParticipantInfoPMD.xlsx")
+dataPMD <- read_excel("/Users/mickey.rice/Desktop/Dissertation/PMD/PMD.xlsx")
+screenerPMD <- read_excel("/Users/mickey.rice/Desktop/screenerEmma.xlsx")
+
+# Get column names from screenerPMD that start with "Q3."
+screener_cols <- colnames(screenerPMD)
+q3_cols <- screener_cols[grepl("^Q3_", screener_cols)]
+
+# Construct SQL query dynamically
+query <- sprintf("
+SELECT d.*, s.Q1_37, s.Q1_38, s.Q1_39, s.Q1_40, s.Q1_41, s.Q1_42, %s
+FROM dataPMD d
+JOIN participantsPMD p ON d.ID = p.IDnumber
+JOIN screenerPMD s ON p.ID = s.ID;
+", paste0("s.", q3_cols, collapse = ", "))
+
+# Run the query
+combined_data2 <- sqldf(query)
+
+library(dplyr)
+
+combined_data2 <- combined_data2 %>%
+  rename(
+    TBI1 = Q1_37,
+    TBI2 = Q1_38,
+    TBI3 = Q1_39,
+    TBI4 = Q1_40,
+    TBI5 = Q1_41,
+    TBI6 = Q1_42
+  )
+
+combined_data2 <- combined_data2 %>%
+  mutate(across(starts_with("Q3_"), ~as.numeric(gsub("[^0-9.-]", "", .))))
+
+combined_data2 <- combined_data2 %>%
+  mutate(across(starts_with("Q3_"), ~as.numeric(as.character(.)), .names = "numeric_{.col}")) %>%
+  rowwise() %>%
+  mutate(DEXtotal = sum(c_across(starts_with("Q3_")), na.rm = TRUE)) %>%
+  ungroup()
+
+install.packages("writexl")
+library(writexl)
+write_xlsx(combined_data2, "/Users/mickey.rice/Desktop/combinedTBI2.xlsx")
+
